@@ -2,7 +2,6 @@
 # and you can add comments to your script using #
 # R console ignores comments
 ################################
-#-------------------------------
 
 #displaying text to the screen
 print("This is my first script")
