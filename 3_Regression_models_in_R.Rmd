@@ -1,0 +1,186 @@
+---
+title: "Linear Regression"
+output: html_notebook
+---
+
+# Regression is the procedure where we model a response variable, Y, using a linear combination of predictor variables, X1, X2, etc.
+Classic regression is focused on understanding the relationship between predictors and response variables. Machine Learning ("Predictive modeling") is focused on using the best predictors and model to generate predictions for new data.
+
+Here we are modeling the performance in fermentation (Yield) using the small-scale assay data.
+
+(Preliminary: Load useful libraries)
+```{r}
+library(tidyverse)
+```
+Load the response data (Y): 
+```{r}
+Y <- "Tier3_yields.csv" %>% read.csv
+Y
+```
+Find median values and use as representative values for strains:
+```{r}
+Y.med <- Y %>% group_by(strain_id) %>% summarise_all(funs(Y = median))
+
+p <- ggplot(data = sample_n(Y.med, 20), aes(x = strain_id, y = Y)) + geom_bar(stat = "identity") + coord_flip() + theme_bw() #only looking at 20 strains here
+p
+
+```
+
+Now, load the predictors (X) - small-scale assay data.
+```{r}
+X <- "C:\\Users\\jabus\\OneDrive\\Documents\\2459\\Delv Bio\\Clients\\Novo Nordisk UCSD\\stats course\\dev\\Tier2 data\\Tier2_plate_data.csv" %>% read.csv
+str(X)
+```
+
+Find median values
+```{r}
+X.med <- X %>% group_by(strain_id) %>% summarise_all(funs(median))
+X.med
+```
+
+Now, we join the Y and X dataframes together:
+```{r}
+mydata <- left_join(Y.med, X.med, by="strain_id")
+mydata
+```
+
+# Data splitting: Training and test sets
+```{r}
+prop_training <- 0.70 #split proportion (training vs testing)
+
+set.seed(123) #for reproducibility
+sample <- sample.int(n = nrow(mydata)
+                     , size = floor(prop_training*nrow(mydata)))
+
+train <- mydata[sample,]
+test <- mydata[-sample,]
+
+```
+
+
+Let's build a basic linear regression model, and view the model summary statistics:
+```{r}
+m1 <- lm(Y ~ X1, data = train) #model 1, using training data
+summary(m1)
+```
+
+Basic plot of our regression model: 
+```{r}
+ggplot(data = train, aes(x = X1, y= Y)) + 
+  geom_smooth(method = "lm") +
+  geom_point(aes(col = strain_id), size=2) +
+  theme_bw() +
+  theme(legend.position="none")  
+```
+
+# New model m2: Let's consider two terms.
+
+Plot Y as a function of X1, X2:
+```{r}
+mydata.2 <- mydata %>% select(strain_id, Y, X1, X2)
+mydata.2
+```
+Gather data into a tidy dataframe:
+```{r}
+mydata.2.long <- mydata.2 %>% gather(key = X, value = value
+                    , -strain_id, -Y)
+mydata.2.long
+
+```
+
+Now we can plot both regression terms:
+```{r}
+ggplot(data = mydata.2.long, aes(x = value, y = Y)) + 
+  facet_wrap(~X) + 
+  geom_point(aes(col=strain_id), size = 2) + 
+  geom_smooth(method = "lm") + 
+  theme_bw() + 
+  theme(legend.position = "none")  
+```
+
+Model m2 (with two predictors):
+```{r}
+m2 <- lm(Y ~ X1 + X2, data = train) #model 2
+summary(m2)
+```
+
+
+# How do we compare between models, m1 and m2? 
+One good option is an error metric called RMSE (root mean squared error). It's critical that we use the test data (not the training data) - better accounts for uncertainty in the model.
+
+```{r}
+test$m1 <- predict(m1, test)
+test$m2 <- predict(m2, test)
+
+rmse.data <- test %>% select(strain_id, Y, m1, m2) %>%
+  gather(key = model, value = predicted
+         , -strain_id, -Y)
+
+rmse <- function(p,o) {
+  return(sqrt(mean((p - o)^2)))
+}
+
+m1.RMSE <- rmse(test$m1, test$Y)
+m2.RMSE <- rmse(test$m2, test$Y)
+
+RMSE <- c(m1.RMSE, m2.RMSE) 
+Model <- c("M1", "M2")
+RMSEs <- as.data.frame(cbind(Model, RMSE))
+RMSEs$RMSE <- as.numeric(as.character(RMSEs$RMSE))
+
+RMSEs
+
+ggplot(rmse.data, aes(predicted, Y, group=model)) + 
+  facet_wrap(~model) + 
+  geom_point() +
+  geom_smooth(method="lm") +
+  theme_bw()
+
+  
+
+```
+Model 2 has a lower RMSE (0.11) compared to Model 1 (0.13). One way to interpret RMSE is the standard deviation of the unexplained uncertainty in the model (lower is better). One nice component of RMSE is that it is in the same units as Y.
+
+#Regression assumes no (or little) multicollinearity (correlation among predictor variables):
+```{r}
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- abs(cor(x, y))
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = cex.cor * r)
+}
+
+pairs(X.med[2:ncol(X.med)], upper.panel = panel.cor)
+```
+
+The above 'pairs' plot is a quick sketch among all pairs of predictor varialbes (below the diagonal) and the associated correlation coefficient (r) is above the diagonal.
+
+Two approaches for reducing collinearity: Remove 'redundant' terms (i.e., correlated), or conduct PCA to generate new predictors that are uncorrelated. 
+
+Save joined data to a .csv file
+```{r}
+
+mydata %>% write.csv(file="joined_data.csv", row.names=FALSE)
+```
+
+Output session info: 
+
+```{r}
+sessionInfo()
+```
+
+#Notes on R Notebooks
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
